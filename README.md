@@ -1,5 +1,4 @@
 1. About PBSIM
-==============
 
 We have developed a long reads simulater (called PBSIM) in which
 sampling-based and model-based simulations are implemented.
@@ -8,7 +7,6 @@ PBSIM simulates Continuous Long Reads (CLRs) of PacBio, and Nanopore reads.
 
 
 2. Run PBSIM with the sample data
-=================================
 
 To run model-based simulation:
 
@@ -65,7 +63,6 @@ using the same real read dataset, you would be better to use
 
 
 3. Model-based simulation
-=========================
 
 For each read, the length is randomly drawn from the gamma distribution
 with given mean and standard deviation.
@@ -101,7 +98,6 @@ Minimum and maximum of read accuracy are determined by mean of accuracy.
 
 
 4. Sampling-based simulation
-============================
 
 The lengths and quality scores of reads are simulated by randomly sampling
 them from real reads provided by the user. Subsequently, their nucleotide
@@ -110,7 +106,6 @@ The restriction of read length and accuracy can be set by the options.
 
 
 5. Input files
-==============
 
 PBSIM requires reference sequences in the single- or multi-FASTA Format. 
 
@@ -120,7 +115,6 @@ standard (fastq-sanger).
 
 
 6. Output files
-===============
 
 If a reference sequence file is multi-FASTA format, simulated datasets
 are generated for each reference sequence numbered sequentially.
@@ -136,7 +130,6 @@ the simulated reads in the MAF format.
 
 
 7. FIC-HMM of quality code
-============================
 
 "data/*.model" are FIC-HMM for each chemistry of PacBio and Nanopore. 
 We utilized HMM with the latest model selection criteria called factorised
@@ -146,7 +139,6 @@ training data, constant quality scores that match the accuracy were used.
 
 
 8. Runtime and memory
-=====================
 
 When a coverage depth is 100x and a length of reference sequence is about 10M,
 PBSIM generates simulated dataset in several minutes. The runtime is roughly
