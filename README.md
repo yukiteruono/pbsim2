@@ -113,6 +113,8 @@ A real reads in FASTQ format is required for sampling-based simulation,
 specified with the --sample-fastq option. FASTQ format must be Sanger
 standard (fastq-sanger).
 
+Input file must be a text file.
+
 
 6. Output files
 

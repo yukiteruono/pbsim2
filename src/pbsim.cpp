@@ -2011,7 +2011,7 @@ long get_time() {
 void print_help() {
   fprintf(stderr, "\n");
   fprintf(stderr, "USAGE: pbsim [options] <reference>\n\n");
-  fprintf(stderr, " <reference>           FASTA format file.\n");
+  fprintf(stderr, " <reference>           FASTA format file (text file only).\n");
   fprintf(stderr, "\n");
   fprintf(stderr, " [general options]\n");
   fprintf(stderr, "\n");
@@ -2028,7 +2028,7 @@ void print_help() {
   fprintf(stderr, "\n");
   fprintf(stderr, " [options of sampling-based simulation]\n");
   fprintf(stderr, "\n");
-  fprintf(stderr, "  --sample-fastq       FASTQ format file to sample.\n");
+  fprintf(stderr, "  --sample-fastq       FASTQ format file to sample (text file only).\n");
   fprintf(stderr, "  --sample-profile-id  sample-fastq (filtered) profile ID.\n");
   fprintf(stderr, "                       when using --sample-fastq, profile is stored.\n");
   fprintf(stderr, "                       'sample_profile_<ID>.fastq', and\n");
