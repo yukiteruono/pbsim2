@@ -1,3 +1,11 @@
+2020-10-30 Yukiteru Ono  <yono@k.u-tokyo.ac.jp>
+
+    Release Version 2.0.1.
+
+    * Added function:
+        Prefix of read ID is able to be changed.
+        Option --id-prefix was added.
+
 2020-6-20 Yukiteru Ono  <yono@k.u-tokyo.ac.jp>
 
     Release Version 2.0.0.

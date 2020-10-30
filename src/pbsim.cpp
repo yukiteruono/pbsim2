@@ -60,6 +60,7 @@ struct sim_t {
   char *prefix, *outfile_ref, *outfile_fq, *outfile_maf;
   char *hmm_model_file;
   char *profile_id, *profile_fq, *profile_stats;
+  char *id_prefix;
 };
 
 // FASTQ
@@ -142,7 +143,7 @@ int simulate_by_sampling();
 int simulate_by_model();
 int mutate();
 int count_digit(long num);
-void print_sim_param();
+void print_sim_param(int seed);
 void print_fastq_stats();
 void print_simulation_stats();
 void print_help();
@@ -188,6 +189,7 @@ int main (int argc, char** argv) {
     {"prefix", 1, NULL, 0},
     {"sample-profile-id", 1, NULL, 0},
     {"seed", 1, NULL, 0},
+    {"id-prefix", 1, NULL, 0},
     {0, 0, 0, 0}
   };
 
@@ -342,6 +344,14 @@ int main (int argc, char** argv) {
         seed = (unsigned int)atoi(optarg);
         break;
 
+      case 14:
+        if ((sim.id_prefix = (char *)malloc(strlen(optarg) + 1)) == 0) {
+          fprintf(stderr, "ERROR: Cannot allocate memory.\n");
+          exit(-1);
+        }
+        strcpy(sim.id_prefix, optarg);
+        break;
+
       default:
         break;
       }
@@ -391,7 +401,7 @@ int main (int argc, char** argv) {
   if (set_sim_param() == FAILED) {
     exit(-1);
   }
-  print_sim_param();
+  print_sim_param(seed);
 
   // FASTQ
   if (sim.process == PROCESS_SAMPLING) {
@@ -995,6 +1005,15 @@ int set_sim_param() {
     return FAILED;
   }
 
+  // prefix of read ID
+  if (!(sim.set_flg[14])) {
+    if ((sim.id_prefix = (char *)malloc(2)) == 0) {
+      fprintf(stderr, "ERROR: Cannot allocate memory.\n");
+      exit(-1);
+    }
+    strcpy(sim.id_prefix, "S");
+  }
+
   // profile
   if (sim.set_flg[12]) {
     if ((sim.profile_fq = (char *)malloc(strlen(sim.profile_id) + 22)) == 0) {
@@ -1179,7 +1198,7 @@ int simulate_by_sampling() {
         value = (int)(accuracy * 100000 + 0.5);
         freq_accuracy[value] ++;
 
-        sprintf(id, "S%ld_%ld", ref.num, sim.res_num);
+        sprintf(id, "%s%ld_%ld", sim.id_prefix, ref.num, sim.res_num);
         fprintf(fp_fq, "@%s\n%s\n+%s\n%s\n", id, mut.new_seq, id, mut.new_qc);
 
         digit_num1[0] = 3;
@@ -1555,7 +1574,7 @@ int simulate_by_model() {
     accuracy = (int)(value * 100000 + 0.5);
     freq_accuracy[accuracy] ++;
 
-    sprintf(id, "S%ld_%ld", ref.num, sim.res_num);
+    sprintf(id, "%s%ld_%ld", sim.id_prefix, ref.num, sim.res_num);
     fprintf(fp_fq, "@%s\n%s\n+%s\n%s\n", id, mut.new_seq, id, mut.new_qc);
 
     digit_num1[0] = 3;
@@ -1639,7 +1658,7 @@ int simulate_by_model() {
 // Function: print_sim_param - Print simulation parameters //
 /////////////////////////////////////////////////////////////
 
-void print_sim_param() {
+void print_sim_param(int seed) {
   fprintf(stderr, ":::: Simulation parameters :::\n\n");
 
   if (sim.process == PROCESS_MODEL) {
@@ -1649,6 +1668,7 @@ void print_sim_param() {
   }
 
   fprintf(stderr, "prefix : %s\n", sim.prefix);
+  fprintf(stderr, "id-prefix : %s\n", sim.id_prefix);
   if (sim.set_flg[12]) {
     fprintf(stderr, "sample_profile_id : %s\n", sim.profile_id);
   }
@@ -1676,6 +1696,8 @@ void print_sim_param() {
 
   fprintf(stderr, "difference-ratio : %ld:%ld:%ld\n",
     sim.sub_ratio, sim.ins_ratio, sim.del_ratio);
+
+  fprintf(stderr, "seed : %d\n", seed);
 
   fprintf(stderr, "\n");
 }
@@ -2016,6 +2038,7 @@ void print_help() {
   fprintf(stderr, " [general options]\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "  --prefix             prefix of output files (sd).\n");
+  fprintf(stderr, "  --id-prefix          prefix of read ID (S).\n");
   fprintf(stderr, "  --depth              depth of coverage (20.0).\n");
   fprintf(stderr, "  --length-min         minimum length (100).\n");
   fprintf(stderr, "  --length-max         maximum length (1000000).\n");
