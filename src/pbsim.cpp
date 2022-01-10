@@ -12,6 +12,7 @@
 #include <limits.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <random>
 
 #define SUCCEEDED 1
 #define FAILED 0
@@ -61,6 +62,7 @@ struct sim_t {
   char *hmm_model_file;
   char *profile_id, *profile_fq, *profile_stats;
   char *id_prefix;
+  int circular;
 };
 
 // FASTQ
@@ -190,6 +192,7 @@ int main (int argc, char** argv) {
     {"sample-profile-id", 1, NULL, 0},
     {"seed", 1, NULL, 0},
     {"id-prefix", 1, NULL, 0},
+    {"circular", 1, NULL, 0},
     {0, 0, 0, 0}
   };
 
@@ -350,6 +353,14 @@ int main (int argc, char** argv) {
           exit(-1);
         }
         strcpy(sim.id_prefix, optarg);
+        break;
+
+      case 15:
+        sim.circular =  atof(optarg);
+        if (sim.circular != TRUE && sim.circular != FALSE){
+          fprintf(stderr, "ERROR (invalid value): --circular can be either set on 1 or 0\n");
+          exit(-1);
+        }
         break;
 
       default:
@@ -974,6 +985,11 @@ int set_sim_param() {
     sim.sub_ratio = 6;
     sim.ins_ratio = 54;
     sim.del_ratio = 40;
+  }
+
+  // circular 
+  if (!(sim.set_flg[15])) {
+    sim.circular = FALSE;
   }
 
   sum = sim.sub_ratio + sim.ins_ratio + sim.del_ratio;
@@ -1698,6 +1714,8 @@ void print_sim_param(int seed) {
     sim.sub_ratio, sim.ins_ratio, sim.del_ratio);
 
   fprintf(stderr, "seed : %d\n", seed);
+  fprintf(stderr, "circular: %d\n", sim.circular);
+
 
   fprintf(stderr, "\n");
 }
@@ -1768,6 +1786,11 @@ int mutate() {
   long offset, seq_offset, maf_offset;
   long del_num_total, pos;
 
+  // sample from uniform distribution for offsets on circular genome
+  std::random_device rd;  //Will be used to obtain a seed for the random number engine
+  std::mt19937 gen(rd()); //Standard mersenne_twister_engine seeded with rd()
+  std::uniform_int_distribution<> distribution(0,ref.len-1);
+
   len = strlen(mut.qc);
   if (mut.tmp_len_max < len) {
     len = mut.tmp_len_max;
@@ -1806,7 +1829,11 @@ int mutate() {
     offset = 0;
     len = ref.len;
   } else {
-    offset = rand() % (ref.len - len + 1);
+    if (sim.circular == TRUE){
+      offset = distribution(gen);
+    }else {
+      offset = rand() % (ref.len - len + 1);
+    }
   }
 
   mut.seq_left = offset + 1;
@@ -1816,14 +1843,25 @@ int mutate() {
     mut.seq_strand = '+';
 
     for (i=0; i<len; i++) {
-      nt = toupper(ref.seq[offset + i]);
+      if (sim.circular == TRUE){
+        // if circular genome
+        nt = toupper(ref.seq[(offset + i)%(ref.len - 1)]);
+      } else{
+        nt = toupper(ref.seq[offset + i]);
+      }
       mut.seq[i] = nt;
     }
   } else {
     mut.seq_strand = '-';
 
     for (i=0; i<len; i++) {
-      nt = toupper(ref.seq[offset + i]);
+
+      if (sim.circular == TRUE){
+        // if circular genome
+        nt = toupper(ref.seq[(offset + i)%(ref.len - 1)]);
+      } else{
+        nt = toupper(ref.seq[offset + i]);
+      }
 
       if (nt == 'A') {
         mut.seq[len-1-i] = 'T';
@@ -2042,8 +2080,9 @@ void print_help() {
   fprintf(stderr, "  --depth              depth of coverage (20.0).\n");
   fprintf(stderr, "  --length-min         minimum length (100).\n");
   fprintf(stderr, "  --length-max         maximum length (1000000).\n");
-  fprintf(stderr, "  --difference-ratio   ratio of differences. substitution:insertion:deletion.\n");
-  fprintf(stderr, "                       each value up to 1000 (6:54:40).\n");
+  fprintf(stderr, "  --difference-ratio   ratio of differences (6:50:54).\n");
+  fprintf(stderr, "                       (substitution:insertion:deletion)\n");
+  fprintf(stderr, "                       Each value must be 0-1000, e.g. 1000:1:0 is OK.\n");
   fprintf(stderr, "                       Note that the above default value is for PacBio, and\n");
   fprintf(stderr, "                       for Nanopore we recommend increasing substitution rate\n");
   fprintf(stderr, "                       and decreasing insertion rate, such as 23:31:46.\n");
@@ -2068,6 +2107,8 @@ void print_help() {
   fprintf(stderr, "  --length-mean        mean of length model (9000.0).\n");
   fprintf(stderr, "  --length-sd          standard deviation of length model (7000.0).\n");
   fprintf(stderr, "  --accuracy-mean      mean of accuracy model (0.85).\n");
+  fprintf(stderr, "  --circular           circular genome (0).\n");
+  fprintf(stderr, "                       to enable this use 1.\n");
   fprintf(stderr, "\n");
 }
 
