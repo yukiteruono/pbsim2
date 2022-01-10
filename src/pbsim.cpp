@@ -2042,9 +2042,8 @@ void print_help() {
   fprintf(stderr, "  --depth              depth of coverage (20.0).\n");
   fprintf(stderr, "  --length-min         minimum length (100).\n");
   fprintf(stderr, "  --length-max         maximum length (1000000).\n");
-  fprintf(stderr, "  --difference-ratio   ratio of differences (6:50:54).\n");
-  fprintf(stderr, "                       (substitution:insertion:deletion)\n");
-  fprintf(stderr, "                       Each value must be 0-1000, e.g. 1000:1:0 is OK.\n");
+  fprintf(stderr, "  --difference-ratio   ratio of differences. substitution:insertion:deletion.\n");
+  fprintf(stderr, "                       each value up to 1000 (6:54:40).\n");
   fprintf(stderr, "                       Note that the above default value is for PacBio, and\n");
   fprintf(stderr, "                       for Nanopore we recommend increasing substitution rate\n");
   fprintf(stderr, "                       and decreasing insertion rate, such as 23:31:46.\n");
