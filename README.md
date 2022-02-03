@@ -148,3 +148,16 @@ proportional to the coverage depth and the length of reference sequence.
 PBSIM requires memory of the length of reference sequence plus several mega
 bytes. 
 
+
+9. Error simulation for templates
+
+Simulation of sequencing error is performed using nucleotide sequences input 
+by the user as templates.
+
+    pbsim --template-fasta templates(FASTA format)
+          --hmm_model data/P6C4.model
+
+PBSIM2 uses model-based simulation to introduce errors into the templates. 
+You can use the error rate options, but not the length options. Also, 
+the --depth option is disabled and the template is sequenced once.
+
