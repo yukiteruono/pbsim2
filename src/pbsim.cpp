@@ -175,7 +175,6 @@ long get_time();
 
 int main (int argc, char** argv) {
   char *tp, *tmp_buf;
-  long len;
   long num;
   long ratio;
   long i, j, k;
@@ -1235,7 +1234,6 @@ int simulate_by_sampling() {
   long sampling_num, sampling_interval, sampling_value, sampling_residue;
   long num;
   long i, j;
-  long index;
   long value;
   double accuracy, accuracy_total = 0.0;
   double prob, variance;
@@ -1422,9 +1420,9 @@ int simulate_by_model() {
   long long len_total = 0;
   long num;
   long i, j, k, l;
-  double prob, mean, variance, sd;
+  double prob, mean, variance;
   double kappa, theta, gamma;
-  double len_prob_total, freq_total, accuracy_prob_total, qc_prob_total, value, sum;
+  double len_prob_total, freq_total, accuracy_prob_total, qc_prob_total, value;
   double accuracy_total = 0.0;
   int accuracy;
   static long prob2len[100001], prob2accuracy[100001];
@@ -1439,7 +1437,7 @@ int simulate_by_model() {
   long qc_rand_value_emis[ACCURACY_MAX+1][STATE_MAX+1];
   long qc_rand_value_tran[ACCURACY_MAX+1][STATE_MAX+1];
   long start_wk, end_wk;
-  long index, pre_index;
+  long index;
   long accuracy_min, accuracy_max;
   char id[128];
   int digit_num1[4], digit_num2[4], digit_num[4];
@@ -1800,8 +1798,8 @@ int simulate_by_templ() {
   long long len_total = 0;
   long num;
   long i, j, k, l;
-  double prob, mean, variance, sd;
-  double freq_total, accuracy_prob_total, qc_prob_total, value, sum;
+  double prob, mean, variance;
+  double freq_total, accuracy_prob_total, qc_prob_total, value;
   double accuracy_total = 0.0;
   int accuracy;
   static long prob2accuracy[100001];
@@ -1816,7 +1814,7 @@ int simulate_by_templ() {
   long qc_rand_value_emis[ACCURACY_MAX+1][STATE_MAX+1];
   long qc_rand_value_tran[ACCURACY_MAX+1][STATE_MAX+1];
   long start_wk, end_wk;
-  long index, pre_index;
+  long index;
   long accuracy_min, accuracy_max;
   char id[128];
   int digit_num1[4], digit_num2[4], digit_num[4];
@@ -2255,7 +2253,6 @@ int set_mut() {
 ////////////////////////////////////
 
 int mutate() {
-  char *line;
   char nt;
   long num;
   long i, j;
@@ -2414,7 +2411,6 @@ int mutate() {
 //////////////////////////////////////////
 
 int mutate_templ() {
-  char *line;
   char nt;
   long num;
   long i, j;
