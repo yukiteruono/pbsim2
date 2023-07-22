@@ -25,6 +25,8 @@
 #define REF_SEQ_LEN_MIN 100
 #define FASTQ_NUM_MAX 100000000
 #define FASTQ_LEN_MAX 1000000
+#define TEMPLATE_NUM_MAX 100000000
+#define TEMPLATE_LEN_MAX 1000000
 #define EXISTS_LINE_FEED 1
 #define DEPTH_MAX 1000
 #define RATIO_MAX 1000
@@ -32,6 +34,7 @@
 #define PROCESS_SAMPLING 2
 #define PROCESS_SAMPLING_REUSE 3
 #define PROCESS_SAMPLING_STORE 4
+#define PROCESS_TEMPLATE 5
 #define ACCURACY_MAX 100
 #define STATE_MAX 50
 
@@ -88,6 +91,16 @@ struct ref_t {
   long num;
 };
 
+// Template
+struct templ_t {
+  char *file;
+  char *seq;
+  char id[REF_ID_LEN_MAX + 1];
+  long len;
+  long num;
+  long long len_total;
+};
+
 // Mutation
 struct mut_t {
   long sub_thre[94], ins_thre[94], err_thre[94], del_thre;
@@ -120,6 +133,7 @@ FILE *fp_filtered, *fp_stats, *fp_ref, *fp_fq, *fp_maf;
 struct sim_t sim;
 struct fastq_t fastq;
 struct ref_t ref;
+struct templ_t templ;
 struct mut_t mut;
 struct qc_t qc[94];
 struct hmm_model_t hmm_model[ACCURACY_MAX+1];
@@ -139,14 +153,18 @@ int set_sim_param();
 int get_ref_inf();
 int get_ref_seq();
 int get_fastq_inf();
+int get_templ_inf();
 int set_hmm_model();
 int set_mut();
 int simulate_by_sampling();
 int simulate_by_model();
+int simulate_by_templ();
 int mutate();
+int mutate_templ();
 int count_digit(long num);
 void print_sim_param(int seed);
 void print_fastq_stats();
+void print_templ_stats();
 void print_simulation_stats();
 void print_help();
 void revcomp(char* str);
@@ -193,6 +211,7 @@ int main (int argc, char** argv) {
     {"seed", 1, NULL, 0},
     {"id-prefix", 1, NULL, 0},
     {"circular", 1, NULL, 0},
+    {"template-fasta", 1, NULL, 0},
     {0, 0, 0, 0}
   };
 
@@ -361,6 +380,11 @@ int main (int argc, char** argv) {
           fprintf(stderr, "ERROR (invalid value): --circular can be either set on 1 or 0\n");
           exit(-1);
         }
+        if ((templ.file = (char *)malloc(strlen(optarg) + 1)) == 0) {
+          fprintf(stderr, "ERROR: Cannot allocate memory.\n");
+          exit(-1);
+        }
+        strcpy(templ.file, optarg);
         break;
 
       default:
@@ -374,10 +398,18 @@ int main (int argc, char** argv) {
 
   srand((unsigned int)seed);
 
-  if (argv[optind] == (char*)'\0') {
-    print_help();
+  if (!(sim.set_flg[15])) {
+    if (argv[optind] == (char*)'\0') {
+      print_help();
+      exit(-1);
+    }
+  }
+
+  // Setting of simulation parameters     
+  if (set_sim_param() == FAILED) {
     exit(-1);
   }
+  print_sim_param(seed);
 
   // Quality code to error probability
   for (i=0; i<=93; i++) {
@@ -407,12 +439,6 @@ int main (int argc, char** argv) {
       }
     }
   }
-
-  // Setting of simulation parameters     
-  if (set_sim_param() == FAILED) {
-    exit(-1);
-  }
-  print_sim_param(seed);
 
   // FASTQ
   if (sim.process == PROCESS_SAMPLING) {
@@ -456,7 +482,7 @@ int main (int argc, char** argv) {
   }
 
   // Quality code model
-  if (sim.process == PROCESS_MODEL) {
+  if ((sim.process == PROCESS_MODEL) || (sim.process == PROCESS_TEMPLATE)) {
     if (set_hmm_model() == FAILED) {
       exit(-1);
     }
@@ -480,58 +506,88 @@ int main (int argc, char** argv) {
   }
   }
 
-  // Reference sequence
-  if ((ref.file = (char *)malloc(strlen(argv[optind]) + 1)) == 0) {
-    fprintf(stderr, "ERROR: Cannot allocate memory.\n");
-    exit(-1);
-  }
-  strcpy(ref.file, argv[optind]);
-
-  if (get_ref_inf() == FAILED) {
-    exit(-1);
-  }
-
   // Set mutation parameters and varianeces
   if (set_mut() == FAILED) {
     exit(-1);
   }
 
   // Creating simulated reads
-  for (ref.num=1; ref.num<=ref.num_seq; ref.num++) {
-    if (get_ref_seq() == FAILED) {
+  if (sim.process == PROCESS_TEMPLATE) {
+    if (get_templ_inf() == FAILED) {
       exit(-1);
     }
+    print_templ_stats();
 
     init_sim_res();
 
-    sprintf(sim.outfile_fq, "%s_%04ld.fastq", sim.prefix, ref.num);
+    sprintf(sim.outfile_fq, "%s.fastq", sim.prefix);
     if ((fp_fq = fopen(sim.outfile_fq, "w")) == NULL) {
       fprintf(stderr, "ERROR: Cannot open output file: %s\n", sim.outfile_fq);
       return FAILED;
     }
 
-    sprintf(sim.outfile_maf, "%s_%04ld.maf", sim.prefix, ref.num);
+    sprintf(sim.outfile_maf, "%s.maf", sim.prefix);
     if ((fp_maf = fopen(sim.outfile_maf, "w")) == NULL) {
       fprintf(stderr, "ERROR: Cannot open output file: %s\n", sim.outfile_maf);
       return FAILED;
     }
 
-    sim.len_quota = (long long)(sim.depth * ref.len);
-
-    if (sim.process == PROCESS_MODEL) {
-      if (simulate_by_model() == FAILED) {
-        exit(-1);
-      }
-    } else {
-      if (simulate_by_sampling() == FAILED) {
-        exit(-1);
-      }
+    if (simulate_by_templ() == FAILED) {
+      exit(-1);
     }
 
     print_simulation_stats();
 
     fclose(fp_fq);
     fclose(fp_maf);
+
+  } else {
+    if ((ref.file = (char *)malloc(strlen(argv[optind]) + 1)) == 0) {
+      fprintf(stderr, "ERROR: Cannot allocate memory.\n");
+      exit(-1);
+    }
+    strcpy(ref.file, argv[optind]);
+
+    if (get_ref_inf() == FAILED) {
+      exit(-1);
+    }
+
+    for (ref.num=1; ref.num<=ref.num_seq; ref.num++) {
+      if (get_ref_seq() == FAILED) {
+        exit(-1);
+      }
+
+      init_sim_res();
+
+      sprintf(sim.outfile_fq, "%s_%04ld.fastq", sim.prefix, ref.num);
+      if ((fp_fq = fopen(sim.outfile_fq, "w")) == NULL) {
+        fprintf(stderr, "ERROR: Cannot open output file: %s\n", sim.outfile_fq);
+        return FAILED;
+      }
+
+      sprintf(sim.outfile_maf, "%s_%04ld.maf", sim.prefix, ref.num);
+      if ((fp_maf = fopen(sim.outfile_maf, "w")) == NULL) {
+        fprintf(stderr, "ERROR: Cannot open output file: %s\n", sim.outfile_maf);
+        return FAILED;
+      }
+
+      sim.len_quota = (long long)(sim.depth * ref.len);
+
+      if (sim.process == PROCESS_MODEL) {
+        if (simulate_by_model() == FAILED) {
+          exit(-1);
+        }
+      } else {
+        if (simulate_by_sampling() == FAILED) {
+          exit(-1);
+        }
+      }
+
+      print_simulation_stats();
+
+      fclose(fp_fq);
+      fclose(fp_maf);
+    }
   }
 
   if ((sim.process == PROCESS_SAMPLING_STORE) || (sim.process == PROCESS_SAMPLING_REUSE)) {
@@ -912,6 +968,72 @@ void print_fastq_stats() {
   fprintf(stderr, "\n");
 }
 
+////////////////////////////////////////////////////////
+// Function: get_templ_inf - Get Template information //
+////////////////////////////////////////////////////////
+
+int get_templ_inf() {
+  FILE *fp;
+  char line[BUF_SIZE];
+  long seqlen, len;
+  int ret;
+
+  templ.num = 0;
+  templ.len_total = 0;
+
+  if ((fp = fopen(templ.file, "r")) == NULL) {
+    fprintf(stderr, "ERROR: Cannot open file: %s\n", templ.file);
+    return FAILED;
+  }
+
+  while (fgets(line, BUF_SIZE, fp) != NULL) {
+    ret = trim(line);
+
+    if (line[0] == '>') {
+      templ.num ++;
+      if (templ.num > TEMPLATE_NUM_MAX) {
+        fprintf(stderr, "ERROR: template is too many. Max acceptable number is %d.\n", TEMPLATE_NUM_MAX);
+        return FAILED;
+      }
+      seqlen = 0;
+      while (ret != EXISTS_LINE_FEED) {
+        if (fgets(line, BUF_SIZE, fp) == NULL) {
+          break;
+        }
+        ret = trim(line);
+      }
+    } else {
+      len = strlen(line);
+      seqlen += len;
+      templ.len_total += len;
+      if (seqlen > TEMPLATE_LEN_MAX) {
+        fprintf(stderr, "ERROR: template is too long. Max acceptable length is %d.\n", TEMPLATE_LEN_MAX);
+        return FAILED;
+      }
+    }
+  }
+
+  if ((templ.seq = (char *)malloc(TEMPLATE_LEN_MAX + 1)) == 0) {
+    fprintf(stderr, "ERROR: Cannot allocate memory.\n");
+    return FAILED;
+  }
+
+  return SUCCEEDED;
+}
+
+////////////////////////////////////////////////////////
+// Function: print_templ_stats - Print Template stats //
+////////////////////////////////////////////////////////
+
+void print_templ_stats() {
+  fprintf(stderr, ":::: Template stats ::::\n\n");
+
+  fprintf(stderr, "file name : %s\n", templ.file);
+  fprintf(stderr, "template num. : %ld\n", templ.num);
+  fprintf(stderr, "template total length : %lld\n", templ.len_total);
+  fprintf(stderr, "\n");
+}
+
 //////////////////////////////////////////////////////////
 // Function: init_sim_res - Initiate simulation results //
 //////////////////////////////////////////////////////////
@@ -1057,9 +1179,15 @@ int set_sim_param() {
   //}
 
   // process
-  if (sim.set_flg[10]) {
+  if (sim.set_flg[15]) {
+    if (!(sim.set_flg[10])) {
+      fprintf(stderr, "ERROR: when using --template-fasta, --hmm_model(model-based) must be set.\n");
+      return FAILED;
+    }
+    sim.process = PROCESS_TEMPLATE;
+  } else if (sim.set_flg[10]) {
     if ((sim.set_flg[0]) || (sim.set_flg[12])) {
-      fprintf(stderr, "ERROR: either --sample-fastq(and/or --sample-profile-id)(sampling-based) or --hmm_model(model-based) should be set.\n");
+      fprintf(stderr, "ERROR: either --sample-fastq(and/or --sample-profile-id)(sampling-based) or --hmm_model(model-based) must be set.\n");
       return FAILED;
     }
     sim.process = PROCESS_MODEL;
@@ -1074,7 +1202,7 @@ int set_sim_param() {
       if (sim.set_flg[12]) {
         sim.process = PROCESS_SAMPLING_REUSE;
       } else {
-        fprintf(stderr, "ERROR: either --sample-fastq(and/or --sample-profile-id)(sampling-based) or --hmm_model(model-based) should be set.\n");
+        fprintf(stderr, "ERROR: either --sample-fastq(and/or --sample-profile-id)(sampling-based) or --hmm_model(model-based) must be set.\n");
         return FAILED;
       }
     }
@@ -1670,6 +1798,369 @@ int simulate_by_model() {
   return SUCCEEDED;
 }
 
+////////////////////////////////////////////////////////
+// Function: simulate_by_templ - Simulate by Template //
+////////////////////////////////////////////////////////
+
+int simulate_by_templ() {
+  FILE *fp;
+  char line[BUF_SIZE];
+  long offset = 0;
+  long copy_size;
+  int ret;
+  char *ret_pointer;
+  long len;
+  long long len_total = 0;
+  long num;
+  long i, j, k, l;
+  double prob, mean, variance, sd;
+  double freq_total, accuracy_prob_total, qc_prob_total, value, sum;
+  double accuracy_total = 0.0;
+  int accuracy;
+  static long prob2accuracy[100001];
+  static long freq2qc[ACCURACY_MAX+1][1001];
+  long state;
+  static long init2state[ACCURACY_MAX+1][1001];
+  static long emis2qc[ACCURACY_MAX+1][STATE_MAX+1][101];
+  static long tran2state[ACCURACY_MAX+1][STATE_MAX+1][101];
+  long accuracy_rand_value;
+  long qc_rand_value_freq[ACCURACY_MAX+1];
+  long qc_rand_value_init[ACCURACY_MAX+1];
+  long qc_rand_value_emis[ACCURACY_MAX+1][STATE_MAX+1];
+  long qc_rand_value_tran[ACCURACY_MAX+1][STATE_MAX+1];
+  long start_wk, end_wk;
+  long index, pre_index;
+  long accuracy_min, accuracy_max;
+  char id[128];
+  int digit_num1[4], digit_num2[4], digit_num[4];
+
+  for (i=0; i<=100000; i++) {
+    freq_accuracy[i] = 0;
+  }
+
+  for (i=0; i<=93; i++) {
+    mut.err_thre[i] = int(qc[i].prob * 1000000 + 0.5);
+    mut.sub_thre[i] = int((qc[i].prob * sim.sub_rate) * 1000000 + 0.5);
+    mut.ins_thre[i] = int((qc[i].prob * (sim.sub_rate + sim.ins_rate)) * 1000000 + 0.5);
+  }
+
+  // accuracy distribution
+  mean = sim.accuracy_mean * 100;
+  accuracy_max = floor(mean * 1.05);
+  accuracy_min = floor(mean * 0.75);
+  if (accuracy_max > 100) {
+    accuracy_max = 100;
+  }
+
+  freq_total = 0.0;
+  for (i=accuracy_min; i<=accuracy_max; i++) {
+    freq_total += exp(0.22 * i);
+  }
+  start_wk = 1; 
+  accuracy_prob_total = 0.0;
+  for (i=accuracy_min; i<=accuracy_max; i++) {
+    accuracy_prob_total += exp(0.22 * i) / freq_total;
+    end_wk = int(accuracy_prob_total * 100000 + 0.5);
+    if (end_wk > 100000) {
+      end_wk = 100000;
+    }
+
+    for (j=start_wk; j<=end_wk; j++) {
+      prob2accuracy[j] = i;
+    }
+
+    if (end_wk >= 100000) {
+      break;
+    }
+    start_wk = end_wk + 1;
+  }
+  accuracy_rand_value = end_wk;
+
+  if (accuracy_rand_value < 1) {
+    fprintf(stderr, "ERROR: accuracy parameters are not appropriate.\n");
+    return FAILED;
+  }
+
+  // quality code distribution
+  for (i=accuracy_min; i<=accuracy_max; i++) {
+
+    if (hmm_model[i].exist_hmm == 1) {
+      start_wk = 1; 
+      qc_prob_total = 0.0;
+
+      for (j=1; j<=STATE_MAX; j++) {
+        if (hmm_model[i].ip[j] == 0) {
+          continue;
+        }
+        qc_prob_total += hmm_model[i].ip[j];
+        end_wk = int(qc_prob_total * 100 + 0.5);
+        if (end_wk > 100) {
+          end_wk = 100;
+        }
+
+        for (k=start_wk; k<=end_wk; k++) {
+          init2state[i][k] = j;
+        }
+
+        if (end_wk >= 100) {
+          break;
+        }
+        start_wk = end_wk + 1;
+      }
+      qc_rand_value_init[i] = end_wk;
+
+      for (j=1; j<=STATE_MAX; j++) {
+        start_wk = 1; 
+        qc_prob_total = 0.0;
+
+        for (k=0; k<=93; k++) {
+          if (hmm_model[i].ep[j][k] == 0) {
+            continue;
+          }
+          qc_prob_total += hmm_model[i].ep[j][k];
+          end_wk = int(qc_prob_total * 100 + 0.5);
+          if (end_wk > 100) {
+            end_wk = 100;
+          }
+
+          for (l=start_wk; l<=end_wk; l++) {
+            emis2qc[i][j][l] = k;
+          }
+
+          if (end_wk >= 100) {
+            break;
+          }
+          start_wk = end_wk + 1;
+        }
+        qc_rand_value_emis[i][j] = end_wk;
+      }
+
+      for (j=1; j<=STATE_MAX; j++) {
+        start_wk = 1; 
+        qc_prob_total = 0.0;
+
+        for (k=1; k<=STATE_MAX; k++) {
+          if (hmm_model[i].tp[j][k] == 0) {
+            continue;
+          }
+          qc_prob_total += hmm_model[i].tp[j][k];
+          end_wk = int(qc_prob_total * 100 + 0.5);
+          if (end_wk > 100) {
+            end_wk = 100;
+          }
+
+          for (l=start_wk; l<=end_wk; l++) {
+            tran2state[i][j][l] = k;
+          }
+
+          if (end_wk >= 100) {
+            break;
+          }
+          start_wk = end_wk + 1;
+        }
+        qc_rand_value_tran[i][j] = end_wk;
+      }
+    } else {
+      start_wk = 1; 
+      qc_prob_total = 0.0;
+
+      for (j=0; j<=93; j++) {
+        if (uni_ep[i][j] == 0) {
+          continue;
+        }
+        qc_prob_total += uni_ep[i][j];
+        end_wk = int(qc_prob_total * 1000 + 0.5);
+        if (end_wk > 1000) {
+          end_wk = 1000;
+        }
+
+        for (k=start_wk; k<=end_wk; k++) {
+          freq2qc[i][k] = j;
+        }
+
+        if (end_wk >= 1000) {
+          break;
+        }
+        start_wk = end_wk + 1;
+      }
+      qc_rand_value_freq[i] = end_wk;
+    }
+  }
+
+  // simulation
+  if ((fp = fopen(templ.file, "r")) == NULL) {
+    fprintf(stderr, "ERROR: Cannot open file: %s\n", templ.file);
+    return FAILED;
+  }
+
+  offset = 0;
+  while (1) {
+    ret_pointer = fgets(line, BUF_SIZE, fp);
+    if (((ret_pointer == NULL) || (line[0] == '>')) && (offset != 0)) {
+      templ.seq[offset] = '\0';
+
+      templ.len = strlen(templ.seq);
+      len = templ.len * 2;
+
+      index = rand() % accuracy_rand_value + 1;
+      accuracy = prob2accuracy[index];
+
+      if (hmm_model[accuracy].exist_hmm == 1) {
+        num = 0;
+        index = rand() % qc_rand_value_init[accuracy] + 1;
+        state = init2state[accuracy][index];
+        index = rand() % qc_rand_value_emis[accuracy][state] + 1;
+        index = emis2qc[accuracy][state][index];
+        mut.qc[num ++] = qc[index].character;
+        while (num < len) {
+          index = rand() % qc_rand_value_tran[accuracy][state] + 1;
+          state = tran2state[accuracy][state][index];
+          index = rand() % qc_rand_value_emis[accuracy][state] + 1;
+          index = emis2qc[accuracy][state][index];
+          mut.qc[num ++] = qc[index].character;
+        }
+        mut.qc[num] = '\0';
+      } else {
+        num = 0;
+        while (num < len) {
+          index = rand() % qc_rand_value_freq[accuracy] + 1;
+          index = freq2qc[accuracy][index];
+          mut.qc[num ++] = qc[index].character;
+        }
+        mut.qc[num] = '\0';
+      }
+
+      mut.del_thre = int(((100 - accuracy) * sim.del_rate) * 10000 + 0.5);
+      if (mutate_templ() == FAILED) {
+        return FAILED;
+      }
+
+      len = strlen(mut.new_seq);
+      sim.res_len_total += len;
+      len_total += len;
+      freq_len[len] ++;
+      sim.res_num ++;
+
+      if (len > sim.res_len_max) {
+        sim.res_len_max = len;
+      }
+      if (len < sim.res_len_min) {
+        sim.res_len_min = len;
+      }
+
+      prob = 0.0;
+      for (i=0; i<len; i++) {
+        prob += qc[(int)mut.new_qc[i] - 33].prob;
+      }
+      value = 1.0 - (prob / len);
+      accuracy_total += value;
+      accuracy = (int)(value * 100000 + 0.5);
+      freq_accuracy[accuracy] ++;
+
+      sprintf(id, "%s_%ld", sim.id_prefix, sim.res_num);
+      fprintf(fp_fq, "@%s\n%s\n+%s\n%s\n", id, mut.new_seq, id, mut.new_qc);
+
+      digit_num1[0] = 3;
+      digit_num2[0] = 1 + count_digit(sim.res_num);
+      digit_num[0] = (digit_num1[0] >= digit_num2[0]) ? digit_num1[0] : digit_num2[0];
+
+      digit_num1[1] = count_digit((mut.seq_left - 1));
+      digit_num2[1] = 1;
+      digit_num[1] = (digit_num1[1] >= digit_num2[1]) ? digit_num1[1] : digit_num2[1];
+
+      digit_num1[2] = count_digit((mut.seq_right - mut.seq_left + 1));
+      digit_num2[2] = count_digit(len);
+      digit_num[2] = (digit_num1[2] >= digit_num2[2]) ? digit_num1[2] : digit_num2[2];
+
+      digit_num1[3] = count_digit(templ.len);
+      digit_num2[3] = count_digit(len);
+      digit_num[3] = (digit_num1[3] >= digit_num2[3]) ? digit_num1[3] : digit_num2[3];
+
+      fprintf(fp_maf, "a\ns %s", templ.id);
+      while (digit_num1[0] ++ < digit_num[0]) {
+        fprintf(fp_maf, " ");
+      }
+      while (digit_num1[1] ++ < digit_num[1]) {
+        fprintf(fp_maf, " ");
+      }
+      fprintf(fp_maf, " %ld", mut.seq_left - 1);
+      while (digit_num1[2] ++ < digit_num[2]) {
+        fprintf(fp_maf, " ");
+      }
+      fprintf(fp_maf, " %ld +", mut.seq_right - mut.seq_left + 1);
+      while (digit_num1[3] ++ < digit_num[3]) {
+        fprintf(fp_maf, " ");
+      }
+      fprintf(fp_maf, " %ld %s\n", templ.len, mut.maf_ref_seq);
+      fprintf(fp_maf, "s %s", id);
+      while (digit_num2[0] ++ < digit_num[0]) {
+        fprintf(fp_maf, " ");
+      }
+      while (digit_num2[1] ++ < digit_num[1]) {
+        fprintf(fp_maf, " ");
+      }
+      fprintf(fp_maf, " %d", 0);
+      while (digit_num2[2] ++ < digit_num[2]) {
+        fprintf(fp_maf, " ");
+      }
+      fprintf(fp_maf, " %ld %c", len, mut.seq_strand);
+      while (digit_num2[3] ++ < digit_num[3]) {
+        fprintf(fp_maf, " ");
+      }
+      fprintf(fp_maf, " %ld %s\n\n", len, mut.maf_seq);
+    }
+
+    if (ret_pointer == NULL) {
+      break;
+    }
+
+    ret = trim(line);
+
+    if (line[0] == '>') {
+      strncpy(templ.id, line+1, REF_ID_LEN_MAX);
+      templ.id[REF_ID_LEN_MAX] = '\0';
+      offset = 0;
+      while (ret != EXISTS_LINE_FEED) {
+        if (fgets(line, BUF_SIZE, fp) == NULL) {
+          break;
+        }
+        ret = trim(line);
+      }
+    } else {
+      copy_size = strlen(line);
+      memcpy(templ.seq + offset, line, copy_size);
+      offset += copy_size;
+    }
+  }
+  fclose(fp);
+
+  sim.res_len_mean = (double)sim.res_len_total / sim.res_num;
+  sim.res_accuracy_mean = accuracy_total / sim.res_num;
+
+  if (sim.res_num == 1) {
+    sim.res_len_sd = 0.0;
+    sim.res_accuracy_sd = 0.0;
+  } else {
+    variance = 0.0;
+    for (i=0; i<=sim.len_max; i++) {
+      if (freq_len[i] > 0) {
+        variance += pow((sim.res_len_mean - i), 2) * freq_len[i];
+      }
+    }
+    sim.res_len_sd = sqrt(variance / sim.res_num);
+
+    variance = 0.0;
+    for (i=0; i<=100000; i++) {
+      if (freq_accuracy[i] > 0) {
+        variance += pow((sim.res_accuracy_mean - i * 0.00001), 2) * freq_accuracy[i];
+      }
+    }
+    sim.res_accuracy_sd = sqrt(variance / sim.res_num);
+  }
+
+  return SUCCEEDED;
+}
+
 /////////////////////////////////////////////////////////////
 // Function: print_sim_param - Print simulation parameters //
 /////////////////////////////////////////////////////////////
@@ -1677,7 +2168,9 @@ int simulate_by_model() {
 void print_sim_param(int seed) {
   fprintf(stderr, ":::: Simulation parameters :::\n\n");
 
-  if (sim.process == PROCESS_MODEL) {
+  if (sim.process == PROCESS_TEMPLATE) {
+    fprintf(stderr, "Error simulation for templates.\n\n");
+  } else if (sim.process == PROCESS_MODEL) {
     fprintf(stderr, "Simulated by stochastic model.\n\n");
   } else {
     fprintf(stderr, "Simulated by fastq sampling.\n\n");
@@ -1689,17 +2182,19 @@ void print_sim_param(int seed) {
     fprintf(stderr, "sample_profile_id : %s\n", sim.profile_id);
   }
 
-  fprintf(stderr, "depth : %lf\n", sim.depth);
+  if (!(sim.process == PROCESS_TEMPLATE)) {
+    fprintf(stderr, "depth : %lf\n", sim.depth);
 
-  if (sim.set_flg[0]) {
-    fprintf(stderr, "length-mean : (sampling FASTQ)\n");
-    fprintf(stderr, "length-sd : (sampling FASTQ)\n");
-  } else {
-    fprintf(stderr, "length-mean : %f\n", sim.len_mean);
-    fprintf(stderr, "length-sd : %f\n", sim.len_sd);
+    if (sim.set_flg[0]) {
+      fprintf(stderr, "length-mean : (sampling FASTQ)\n");
+      fprintf(stderr, "length-sd : (sampling FASTQ)\n");
+    } else {
+      fprintf(stderr, "length-mean : %f\n", sim.len_mean);
+      fprintf(stderr, "length-sd : %f\n", sim.len_sd);
+    }
+    fprintf(stderr, "length-min : %ld\n", sim.len_min);
+    fprintf(stderr, "length-max : %ld\n", sim.len_max);
   }
-  fprintf(stderr, "length-min : %ld\n", sim.len_min);
-  fprintf(stderr, "length-max : %ld\n", sim.len_max);
 
   if (sim.set_flg[0]) {
     fprintf(stderr, "accuracy-mean : (sampling FASTQ)\n");
@@ -1949,29 +2444,168 @@ int mutate() {
   return SUCCEEDED;
 }
 
+//////////////////////////////////////////
+// Function: mutate_templ - Mutate read //
+//////////////////////////////////////////
+
+int mutate_templ() {
+  char *line;
+  char nt;
+  long num;
+  long i, j;
+  long index;
+  long rand_value;
+  long qc_value;
+  long len, seqlen;
+  long offset, new_offset, seq_offset, qc_offset, maf_offset;
+  long del_num_total, pos;
+
+  len = strlen(mut.qc);
+
+  // Place deletions
+  long del_num[len];
+  for(i=0; i<len; i++) {
+    del_num[i] = 0;
+  }
+  del_num_total = int((float)len * mut.del_thre / 1000000 + 0.5);
+  num = 0;
+  while (num < del_num_total) {
+    pos = rand() % (len-1);
+    rand_value = rand() % 1000000;
+    qc_value = (int)mut.qc[pos] - 33;
+    if (rand_value < mut.err_thre[qc_value]) {
+      del_num[pos] ++;
+      num ++;
+    }
+  }
+  offset = 0;
+  for (i=0; i<len-1; i++) {
+    mut.tmp_qc[offset ++] = mut.qc[i];
+    for (j=0; j<del_num[i]; j++) {
+      mut.tmp_qc[offset ++] = ' ';
+    }
+  }
+  mut.tmp_qc[offset ++] = mut.qc[len - 1];
+  mut.tmp_qc[offset] = '\0';
+
+  seqlen = strlen(templ.seq);
+  mut.seq_left = 1;
+  mut.seq_right = seqlen;
+  mut.seq_strand = '+';
+
+  for (i=0; i<seqlen; i++) {
+    nt = toupper(templ.seq[i]);
+    mut.seq[i] = nt;
+  }
+  mut.seq[seqlen] = '\0';
+
+  // Place substitutions and insertions
+  qc_offset = 0;
+  new_offset = 0;
+  seq_offset = 0;
+  maf_offset = 0;
+  while (seq_offset < seqlen) {
+    nt = mut.seq[seq_offset ++];
+
+    if (mut.tmp_qc[qc_offset] == ' ') {
+      sim.res_del_num ++;
+      mut.maf_seq[maf_offset] = '-';
+      mut.maf_ref_seq[maf_offset] = nt;
+      maf_offset ++;
+      qc_offset ++;
+      continue;
+    }
+
+    mut.new_qc[new_offset] = mut.tmp_qc[qc_offset];
+
+    rand_value = rand() % 1000000;
+    qc_value = (int)mut.tmp_qc[qc_offset] - 33;
+
+    if (rand_value < mut.sub_thre[qc_value]) {
+      sim.res_sub_num ++;
+      index = rand() % 3;
+      if (nt == 'A') {
+        mut.new_seq[new_offset] = mut.sub_nt_a[index];
+      } else if (nt == 'T') {
+        mut.new_seq[new_offset] = mut.sub_nt_t[index];
+      } else if (nt == 'G') {
+        mut.new_seq[new_offset] = mut.sub_nt_g[index];
+      } else if (nt == 'C') {
+        mut.new_seq[new_offset] = mut.sub_nt_c[index];
+      } else {
+        index = rand() % 4;
+        mut.new_seq[new_offset] = mut.sub_nt_n[index];
+      }
+      mut.maf_ref_seq[maf_offset] = nt;
+    } else if (rand_value < mut.ins_thre[qc_value]) {
+      sim.res_ins_num ++;
+      index = rand() % 8;
+      if (index >= 4) {
+        mut.new_seq[new_offset] = nt;
+      } else {
+        mut.new_seq[new_offset] = mut.ins_nt[index];
+      }
+      seq_offset --;
+      mut.maf_ref_seq[maf_offset] = '-';
+    } else {
+      mut.new_seq[new_offset] = nt;
+      mut.maf_ref_seq[maf_offset] = nt;
+    }
+    mut.maf_seq[maf_offset] = mut.new_seq[new_offset];
+    maf_offset ++;
+    qc_offset ++;
+    new_offset ++;
+  }
+  mut.new_qc[new_offset] = '\0';
+  mut.new_seq[new_offset] = '\0';
+  mut.maf_seq[maf_offset] = '\0';
+  mut.maf_ref_seq[maf_offset] = '\0';
+
+  return SUCCEEDED;
+}
+
 ////////////////////////////////////////////////////////////////
 // Function: print_simulation_stats - Print Simulation Stats. //
 ////////////////////////////////////////////////////////////////
 
 void print_simulation_stats() {
-  sim.res_depth = (double)sim.res_len_total / ref.len;
-  sim.res_sub_rate = (double)sim.res_sub_num / sim.res_len_total;
-  sim.res_ins_rate = (double)sim.res_ins_num / sim.res_len_total;
-  sim.res_del_rate = (double)sim.res_del_num / sim.res_len_total;
+  if (sim.process == PROCESS_TEMPLATE) {
+    sim.res_sub_rate = (double)sim.res_sub_num / sim.res_len_total;
+    sim.res_ins_rate = (double)sim.res_ins_num / sim.res_len_total;
+    sim.res_del_rate = (double)sim.res_del_num / sim.res_len_total;
 
-  fprintf(stderr, ":::: Simulation stats (ref.%ld) ::::\n\n", ref.num);
-  fprintf(stderr, "read num. : %ld\n", sim.res_num);
-  fprintf(stderr, "depth : %lf\n", sim.res_depth);
-  fprintf(stderr, "read length mean (SD) : %f (%f)\n",
-    sim.res_len_mean, sim.res_len_sd);
-  fprintf(stderr, "read length min : %ld\n", sim.res_len_min);
-  fprintf(stderr, "read length max : %ld\n", sim.res_len_max);
-  fprintf(stderr, "read accuracy mean (SD) : %f (%f)\n",
-    sim.res_accuracy_mean, sim.res_accuracy_sd);
-  fprintf(stderr, "substitution rate. : %f\n", sim.res_sub_rate);
-  fprintf(stderr, "insertion rate. : %f\n", sim.res_ins_rate);
-  fprintf(stderr, "deletion rate. : %f\n", sim.res_del_rate);
-  fprintf(stderr, "\n");
+    fprintf(stderr, ":::: Simulation stats (templates) ::::\n\n");
+    fprintf(stderr, "read num. : %ld\n", sim.res_num);
+    fprintf(stderr, "read length mean (SD) : %f (%f)\n",
+      sim.res_len_mean, sim.res_len_sd);
+    fprintf(stderr, "read length min : %ld\n", sim.res_len_min);
+    fprintf(stderr, "read length max : %ld\n", sim.res_len_max);
+    fprintf(stderr, "read accuracy mean (SD) : %f (%f)\n",
+      sim.res_accuracy_mean, sim.res_accuracy_sd);
+    fprintf(stderr, "substitution rate. : %f\n", sim.res_sub_rate);
+    fprintf(stderr, "insertion rate. : %f\n", sim.res_ins_rate);
+    fprintf(stderr, "deletion rate. : %f\n", sim.res_del_rate);
+    fprintf(stderr, "\n");
+  } else {
+    sim.res_depth = (double)sim.res_len_total / ref.len;
+    sim.res_sub_rate = (double)sim.res_sub_num / sim.res_len_total;
+    sim.res_ins_rate = (double)sim.res_ins_num / sim.res_len_total;
+    sim.res_del_rate = (double)sim.res_del_num / sim.res_len_total;
+
+    fprintf(stderr, ":::: Simulation stats (ref.%ld) ::::\n\n", ref.num);
+    fprintf(stderr, "read num. : %ld\n", sim.res_num);
+    fprintf(stderr, "depth : %lf\n", sim.res_depth);
+    fprintf(stderr, "read length mean (SD) : %f (%f)\n",
+      sim.res_len_mean, sim.res_len_sd);
+    fprintf(stderr, "read length min : %ld\n", sim.res_len_min);
+    fprintf(stderr, "read length max : %ld\n", sim.res_len_max);
+    fprintf(stderr, "read accuracy mean (SD) : %f (%f)\n",
+      sim.res_accuracy_mean, sim.res_accuracy_sd);
+    fprintf(stderr, "substitution rate. : %f\n", sim.res_sub_rate);
+    fprintf(stderr, "insertion rate. : %f\n", sim.res_ins_rate);
+    fprintf(stderr, "deletion rate. : %f\n", sim.res_del_rate);
+    fprintf(stderr, "\n");
+  }
 }
 
 ///////////////////////////////////////////////////////
@@ -2109,6 +2743,10 @@ void print_help() {
   fprintf(stderr, "  --accuracy-mean      mean of accuracy model (0.85).\n");
   fprintf(stderr, "  --circular           circular genome (0).\n");
   fprintf(stderr, "                       to enable this use 1.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, " [option of error simulation for templates].\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "  --template-fasta     FASTA format file of templates (text file only).\n");
   fprintf(stderr, "\n");
 }
 

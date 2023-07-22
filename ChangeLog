@@ -1,3 +1,10 @@
+2022-02-03 Yukiteru Ono  <yono@k.u-tokyo.ac.jp>
+
+    Release Version 2.0.2.
+
+    * Added function:
+        Error simulation for templates was implemented.
+
 2020-10-30 Yukiteru Ono  <yono@k.u-tokyo.ac.jp>
 
     Release Version 2.0.1.
